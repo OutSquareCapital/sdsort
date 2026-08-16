@@ -10,3 +10,5 @@ test/repos/
 # per-plan subagent artifacts, docs/superpowers/ holds design specs and implementation plans.
 .superpowers/
 docs/superpowers/
+# temp file for quick tests
+t.py

@@ -31,7 +31,7 @@ ResultType: TypeAlias = (
 B = TypeVar("B", bound=Block)
 
 
-def step_down_sort(python_file_path: str | Path) -> ResultType:
+def step_down_sort(python_file_path: Path) -> ResultType:
     source = read_file(python_file_path)
     if _should_skip(source):
         return ("skipped", None)

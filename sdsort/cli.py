@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import itertools
 import os
 import sys
 from dataclasses import dataclass, field
 from functools import partial
-from glob import glob
+from glob import iglob
+from pathlib import Path
 from tokenize import TokenError
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
@@ -15,9 +17,8 @@ from .utils.pluralize import pluralize
 from .utils.timer import Timer
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterator, Sequence
 
-# TODO: switch to pathlib
 
 _MIN_FILES_FOR_PARALLELISM = 50
 _MAX_WORKERS = 64
@@ -49,7 +50,7 @@ FileOutcome: TypeAlias = (
         "that scale."
     ),
 )
-def main(paths: tuple[str, ...], check: bool, jobs: int):
+def main(paths: tuple[str, ...], check: bool, jobs: int) -> None:
     file_paths = _expand_file_paths(paths)
 
     with Timer() as t:
@@ -61,17 +62,20 @@ def main(paths: tuple[str, ...], check: bool, jobs: int):
         raise SystemExit(1)
 
 
-def _expand_file_paths(paths: tuple[str, ...]) -> Iterable[str]:
-    file_paths: list[str] = []
-    for path in paths:
-        if os.path.isdir(path):
-            file_paths.extend(glob(os.path.join(path, "**/*.py"), recursive=True))
-        else:
-            file_paths.append(path)
-    return file_paths
+def _expand_file_paths(paths: tuple[str, ...]) -> Iterator[Path]:
+    all_paths = map(_recurse_dir, paths)
+    flattened = itertools.chain.from_iterable(all_paths)
+    return map(Path, flattened)
 
 
-def _sort_files(file_paths: list[str], check: bool, jobs: int):
+def _recurse_dir(path: str) -> Iterator[str]:
+    if os.path.isdir(path):  # noqa: PTH112
+        return iglob(os.path.join(path, "**/*.py"), recursive=True)  # noqa: PTH118, PTH207
+    else:
+        return iter((path,))
+
+
+def _sort_files(file_paths: Sequence[Path], check: bool, jobs: int) -> Results:
     results = Results()
 
     for file_path, outcome in zip(file_paths, _sort_each(file_paths, check, jobs)):
@@ -88,7 +92,7 @@ def _sort_files(file_paths: list[str], check: bool, jobs: int):
     return results
 
 
-def _sort_each(file_paths: list[str], check: bool, jobs: int) -> list[FileOutcome]:
+def _sort_each(file_paths: Sequence[Path], check: bool, jobs: int) -> list[FileOutcome]:
     """Sort every file, returning one outcome per input path, in input order."""
     sort_one = partial(_sort_file, check=check)
     workers = _worker_count(len(file_paths), jobs, _available_cpu_count())
@@ -123,7 +127,7 @@ def _available_cpu_count() -> int:
     return os.cpu_count() or 1
 
 
-def _sort_file(file_path: str, check: bool) -> FileOutcome:
+def _sort_file(file_path: Path, check: bool) -> FileOutcome:
     try:
         modification = step_down_sort(file_path)
     except _UNPARSEABLE as error:
@@ -132,7 +136,7 @@ def _sort_file(file_path: str, check: bool) -> FileOutcome:
     match modification:
         case ("sorted", modified_source):
             if not check:
-                with open(file_path, "w", encoding="utf-8") as file:
+                with file_path.open("w", encoding="utf-8") as file:
                     file.write(modified_source)
             return ("sorted", None)
         case ("skipped", _):
@@ -152,10 +156,10 @@ def _describe_failure(error: Exception) -> str:
 
 @dataclass
 class Results:
-    modified_files: list[str] = field(default_factory=list)
-    skipped_files: list[str] = field(default_factory=list)
-    pristine_files: list[str] = field(default_factory=list)
-    unparseable_files: list[tuple[str, str]] = field(default_factory=list)
+    modified_files: list[Path] = field(default_factory=list)
+    skipped_files: list[Path] = field(default_factory=list)
+    pristine_files: list[Path] = field(default_factory=list)
+    unparseable_files: list[tuple[Path, str]] = field(default_factory=list)
 
     def __len__(self):
         return (
