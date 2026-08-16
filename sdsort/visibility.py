@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import TYPE_CHECKING, Final, Generic, TypeAlias, TypeVar
 
@@ -53,28 +53,6 @@ class VisibilityRanks(Generic[T]):
             if rank is None:
                 self.inner[k] = default
         return self  # pyright: ignore[reportArgumentType, reportReturnType]
-
-    def classify_for_block(self: VisibilityRanks[int], name: str) -> int:
-        """Classify a `FunctionBlock` according to its name and assign it the corresponding rank."""
-        return self.inner[MethodVisibility.new(name)]
-
-
-@dataclass(slots=True)
-class MethodInfos:
-    visibility: MethodVisibility
-    behavior: MethodBehavior
-    contract: MethodContract
-
-    @classmethod
-    def from_node(cls, node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodInfos:
-        """Create a `MethodInfos` instance from an AST node representing a function definition."""
-        decorators_names = tuple(
-            decorator.id for decorator in node.decorator_list if isinstance(decorator, ast.Name)
-        )
-        visibility = MethodVisibility.new(node.name)
-        behavior = MethodBehavior.new(decorators_names)
-        contract = MethodContract.new(decorators_names)
-        return MethodInfos(visibility, behavior, contract)
 
 
 class MethodBehavior(StrEnum):
@@ -147,6 +125,25 @@ class MethodVisibility(StrEnum):
             return cls.PROTECTED
         else:
             return cls.PUBLIC
+
+
+@dataclass(slots=True)
+class MethodInfos:
+    visibility: MethodVisibility = field(default=MethodVisibility.PUBLIC)
+    behavior: MethodBehavior = field(default=MethodBehavior.INSTANCEMETHOD)
+    contract: MethodContract = field(default=MethodContract.NONE)
+
+    @classmethod
+    def from_node(cls, node: ast.FunctionDef | ast.AsyncFunctionDef) -> MethodInfos:
+        """Create a `MethodInfos` instance from an AST node representing a function definition."""
+        # NOTE: we could do everything in one pass, but since there will never be more than 3-4 decorators, it's not worth the complexity.
+        decorators_names = tuple(
+            decorator.id for decorator in node.decorator_list if isinstance(decorator, ast.Name)
+        )
+        visibility = MethodVisibility.new(node.name)
+        behavior = MethodBehavior.new(decorators_names)
+        contract = MethodContract.new(decorators_names)
+        return MethodInfos(visibility, behavior, contract)
 
 
 RanksData: TypeAlias = MutableMapping[MethodVisibility, T]

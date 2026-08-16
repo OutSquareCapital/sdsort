@@ -22,6 +22,8 @@ from ast import (
 )
 from typing import TYPE_CHECKING
 
+from .visibility import MethodInfos
+
 if sys.version_info >= (3, 12):
     # PEP 695 `type X = ...` aliases (ast.TypeAlias) only exist on Python 3.12+.
     from ast import TypeAlias
@@ -189,7 +191,7 @@ class ClassBlock(Block):
                         current_block = FunctionBlock(method_node, source_lines, context)
                         current_block.start = max(current_block.start, running_end)
                         self._methods.append(current_block)
-                        current_block.rank = ok_ranks.classify_for_block(method_node.name)
+                        current_block.rank = ok_ranks.inner[current_block.infos.visibility]
                     running_end = max(running_end, current_block.end)
 
     def append(self, node: AST) -> bool:
@@ -248,6 +250,7 @@ def resolve_overlapping_ranges(blocks: Collection[Block]) -> None:
 
 class FunctionBlock(Block):
     _nodes: list[Function]
+    infos: MethodInfos
 
     def __init__(self, node: Function, source_lines: list[str], context: Context):
         super().__init__(node, context)
@@ -255,6 +258,7 @@ class FunctionBlock(Block):
         self._source_lines = source_lines
         self.name = node.name
         self.rank = 0
+        self.infos = MethodInfos.from_node(node)
 
     def append(self, node: AST) -> bool:
         if isinstance(node, (FunctionDef, AsyncFunctionDef)) and node.name == self._nodes[0].name:
