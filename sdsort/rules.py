@@ -21,8 +21,8 @@ RulesMap: TypeAlias = MutableMapping[K, T]
 
 @dataclass(slots=True)
 class Config(Generic[K, T]):
-    """Configuration options for sorting logic based on visibility of method names on a given class.\\
-        We use a TypeState pattern to avoid code duplication and ensure that the consumers of this class handle the expected state of the ranks."""
+    """Configuration options for a given rule.\\
+        We use a TypeState pattern to avoid code duplication and ensure that the consumers of this class handle the expected state of the `Config`."""
 
     inner: Final[RulesMap[K, T]]
 
@@ -35,7 +35,7 @@ class Config(Generic[K, T]):
 
     @classmethod
     def try_from(cls, config: TomlTable) -> Config[Visibility, int | None] | None:
-        """Try to create a `VisibilityRanks` instance from a configuration dictionary.
+        """Try to create a `Config` instance from a configuration dictionary.
 
         Args:
             config (TomlTable): A configuration dictionary, parsed from a TOML file, which may contain the needed keys for instantiation.
@@ -51,7 +51,7 @@ class Config(Generic[K, T]):
 
     def into_ok_or_default(self: Config[Visibility, int | None]) -> Config[Visibility, int]:
         """Transform a `Config[T]` into a `Config[int]` by replacing `None` values by a default value.\\
-        The default value is the maximum of the non-`None` ranks plus one, so that any `None` rank is considered to be "after" all the other ranks."""
+        The default value is the maximum of the non-`None` ranks plus one, so that any `None` value is considered to be "after" all the other ranks."""
         default = max(rank for rank in self.inner.values() if rank is not None) + 1
         # In-place mutation for efficiency. We can statically guarantee the type output after this operation.
         for k, rank in self.inner.items():
