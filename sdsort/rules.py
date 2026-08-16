@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Literal, Self, TypeAlias, TypeVar
 if TYPE_CHECKING:
     from sdsort.context import TomlTable
 
-T = TypeVar("T", bound=int | None)
 K = TypeVar("K", bound=Enum)
 
 
@@ -16,7 +15,7 @@ Names = Literal["visibility", "behavior", "contract", "alphabetical"]
 
 
 Config: TypeAlias = MutableMapping[K, int]
-"""Inner data structure for `VisibilityRanks`."""
+"""A configuration mapping from enum keys to integer ranks."""
 
 
 class _Rule(StrEnum):
