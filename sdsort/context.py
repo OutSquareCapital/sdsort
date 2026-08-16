@@ -34,7 +34,7 @@ class FileKind(StrEnum):
 class Context:
     deferred_annotations: bool
     """Whether lazy annotations are enabled or not."""
-    visibility_ranks: rules.Config[rules.Visibility, int | None] | None = None
+    visibility_ranks: rules.Config[rules.Visibility] | None = None
     """Configuration options for sorting logic based on visibility of method names on a given class."""
     sort_by_name: bool = False
     """If `True`, sort methods by name after sorting by visibility.\\
@@ -51,7 +51,7 @@ def gather_context(root_node: Module, file_path: Path | None = None) -> Context:
     config, deferred_annotations = _get_config_and_annotations(file_path, root_node)
     return Context(
         deferred_annotations,
-        rules.Config.try_from(config),
+        rules.Visibility.try_into(config),
         config.get("sort-by-name", False),
         config.get("rules-order", []),
     )

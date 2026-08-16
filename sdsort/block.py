@@ -185,14 +185,13 @@ class ClassBlock(Block):
                         self._methods.append(current_block)
                 resolve_overlapping_ranges(self._methods)
             case ranks:
-                ok_ranks = ranks.into_ok_or_default()
                 running_end = 0
                 for method_node in method_nodes:
                     if current_block is None or not current_block.append(method_node):
                         current_block = FunctionBlock(method_node, source_lines, context)
                         current_block.start = max(current_block.start, running_end)
                         self._methods.append(current_block)
-                        current_block.rank = ok_ranks.inner[current_block.infos.visibility]
+                        current_block.rank = ranks[current_block.infos.visibility]
                     running_end = max(running_end, current_block.end)
 
     def append(self, node: AST) -> bool:

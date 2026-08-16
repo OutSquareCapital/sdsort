@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Container, Iterable, MutableMapping
-from dataclasses import dataclass
 from enum import Enum, StrEnum, auto
-from typing import TYPE_CHECKING, Final, Generic, Literal, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Literal, Self, TypeAlias, TypeVar
 
 if TYPE_CHECKING:
     from sdsort.context import TomlTable
@@ -11,56 +10,53 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound=int | None)
 K = TypeVar("K", bound=Enum)
 
+
 Names = Literal["visibility", "behavior", "contract", "alphabetical"]
 """Type alias for the names of the rules that can be applied when sorting methods."""
 
 
-RulesMap: TypeAlias = MutableMapping[K, T]
+Config: TypeAlias = MutableMapping[K, int]
 """Inner data structure for `VisibilityRanks`."""
 
 
-@dataclass(slots=True)
-class Config(Generic[K, T]):
-    """Configuration options for a given rule.\\
-        We use a TypeState pattern to avoid code duplication and ensure that the consumers of this class handle the expected state of the `Config`."""
-
-    inner: Final[RulesMap[K, T]]
-
+class _Rule(StrEnum):
     @classmethod
-    def from_kwargs(cls, **kwargs: int | None) -> Config[Visibility, int | None]:
+    def as_config(cls, **kwargs: int | None) -> Config[Self]:
         """Convenience helper for testing purposes."""
 
-        iterator = ((k, kwargs.get(k.name.lower())) for k in Visibility)
-        return Config(dict(iterator))
+        iterator = ((k, kwargs.get(k.name.lower())) for k in cls)
+        return _into_config(iterator)
 
     @classmethod
-    def try_from(cls, config: TomlTable) -> Config[Visibility, int | None] | None:
-        """Try to create a `Config` instance from a configuration dictionary.
+    def try_into(cls, config: TomlTable) -> Config[Self] | None:
+        """Try to create a `Config` instance corresponding to this rule from an opaque dictionary.
 
         Args:
             config (TomlTable): A configuration dictionary, parsed from a TOML file, which may contain the needed keys for instantiation.
 
         Returns:
-            Config[Visibility, int | None] | None: A `Config` instance if the configuration is valid, otherwise `None`.
+            Config[Self, int | None] | None: A `Config` instance if the configuration is valid, otherwise `None`.
         """
-        values = tuple(config.get(k) for k in Visibility)
+        values = tuple(config.get(k) for k in cls)
         if all(value is None for value in values):
             return None
         else:
-            return Config(dict(zip(Visibility, values)))
-
-    def into_ok_or_default(self: Config[Visibility, int | None]) -> Config[Visibility, int]:
-        """Transform a `Config[T]` into a `Config[int]` by replacing `None` values by a default value.\\
-        The default value is the maximum of the non-`None` ranks plus one, so that any `None` value is considered to be "after" all the other ranks."""
-        default = max(rank for rank in self.inner.values() if rank is not None) + 1
-        # In-place mutation for efficiency. We can statically guarantee the type output after this operation.
-        for k, rank in self.inner.items():
-            if rank is None:
-                self.inner[k] = default
-        return self  # pyright: ignore[reportArgumentType, reportReturnType]
+            return _into_config(zip(cls, values))
 
 
-class Behavior(StrEnum):
+def _into_config(iterable: Iterable[tuple[K, int | None]]) -> Config[K]:
+    """Transform an  `Iterable[tuple[K, V]]`, where `K: Enum`, into a `Config[K]` dictionary by replacing `None` values by a default value.\\
+    Said default value is the maximum of the non-`None` ranks plus one, so that any `None` value is considered to be **after** all the other ranks."""
+    config = dict(iterable)
+    default = max(rank for rank in config.values() if rank is not None) + 1
+    # In-place mutation for efficiency. We can statically guarantee the type output after this operation.
+    for k, rank in config.items():
+        if rank is None:
+            config[k] = default
+    return config  # pyright: ignore[reportArgumentType, reportReturnType]
+
+
+class Behavior(_Rule):
     """Mutually exclusive decorators that define the behavior of a method."""
 
     STATICMETHOD = auto()
@@ -87,7 +83,7 @@ class Behavior(StrEnum):
         return cls.INSTANCEMETHOD
 
 
-class Contract(StrEnum):
+class Contract(_Rule):
     """Defines the contract of a method, i.e. whether it's an interface, an implementation of an interface, or unrelated to a class hierarchy.\\
     The contract is determined by the presence (or complete absence) of specific decorators."""
 
@@ -114,7 +110,7 @@ class Contract(StrEnum):
                 return cls.ABSTRACT_OVERRIDE
 
 
-class Visibility(StrEnum):
+class Visibility(_Rule):
     """Defines the visibility of a method based on its name, i.e is it intended to be public, or an implementation detail.\\
     The visibility is determined by the naming convention of the method."""
 
