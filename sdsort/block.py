@@ -189,7 +189,7 @@ class ClassBlock(Block):
                         current_block = FunctionBlock(method_node, source_lines, context)
                         current_block.start = max(current_block.start, running_end)
                         self._methods.append(current_block)
-                        ok_ranks.classify_for_block(current_block, method_node.name)
+                        current_block.rank = ok_ranks.classify_for_block(method_node.name)
                     running_end = max(running_end, current_block.end)
 
     def append(self, node: AST) -> bool:
