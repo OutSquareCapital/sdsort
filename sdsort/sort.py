@@ -9,7 +9,7 @@ from tokenize import COMMENT, tokenize
 from typing import TYPE_CHECKING, Generic, Literal, TypeAlias, TypeVar
 
 from .block import Block, ClassBlock, FunctionBlock, block_for, resolve_overlapping_ranges
-from .context import Context
+from .context import Context, gather_context
 from .format import normalize_blank_lines
 from .graph import AcyclicGraph
 from .utils.ast import (
@@ -37,7 +37,7 @@ def step_down_sort(python_file_path: Path) -> ResultType:
         return ("skipped", None)
 
     syntax_tree = parse(source, filename=python_file_path)
-    context = Context.new(syntax_tree, python_file_path.resolve())
+    context = gather_context(syntax_tree, python_file_path.resolve())
     source_lines = split_lines(source)
 
     # First, sort top-level blocks (functions and classes)

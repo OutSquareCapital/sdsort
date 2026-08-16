@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from functools import lru_cache
 from itertools import takewhile
-from typing import TYPE_CHECKING, Any, Self, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from .visibility import VisibilityRanks
 
@@ -27,7 +27,7 @@ class FileKind(StrEnum):
     TOML = ".toml"
 
     def as_rglob(self) -> str:
-        return f"**/*.{self.value}*"
+        return f"**/*{self.value}*"
 
 
 @dataclass
@@ -40,14 +40,14 @@ class Context:
     """If `True`, sort methods by name after sorting by visibility.\\
     Default is `False`."""
 
-    @classmethod
-    def new(cls, root_node: Module, file_path: Path | None = None) -> Self:
-        config, deferred_annotations = _get_config_and_annotations(file_path, root_node)
-        return cls(deferred_annotations, VisibilityRanks.try_from(config), config.get("sort-by-name", False))
-
     @property
     def sort_by_visibility(self) -> bool:
         return self.visibility_ranks is not None
+
+
+def gather_context(root_node: Module, file_path: Path | None = None) -> Context:
+    config, deferred_annotations = _get_config_and_annotations(file_path, root_node)
+    return Context(deferred_annotations, VisibilityRanks.try_from(config), config.get("sort-by-name", False))
 
 
 @lru_cache
