@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import itertools
 import os
 import sys
 from dataclasses import dataclass, field
@@ -63,16 +62,15 @@ def main(paths: tuple[str, ...], check: bool, jobs: int) -> None:
 
 
 def _expand_file_paths(paths: tuple[str, ...]) -> Iterator[Path]:
-    all_paths = map(_recurse_dir, paths)
-    flattened = itertools.chain.from_iterable(all_paths)
-    return map(Path, flattened)
-
-
-def _recurse_dir(path: str) -> Iterator[str]:
-    if os.path.isdir(path):  # noqa: PTH112
-        return iglob(os.path.join(path, "**/*.py"), recursive=True)  # noqa: PTH118, PTH207
-    else:
-        return iter((path,))
+    # We use os here unfortunately because the behavior of Path.glob diverge from the one from iglob. (`glob` just do `list(iglob(...))` internally.)
+    # It won't filter folders like `.venv`, and reimplementing this in pure python doubles the time spend on this function.
+    file_paths: list[str] = []
+    for path in paths:
+        if os.path.isdir(path):  # noqa: PTH112
+            file_paths.extend(iglob(os.path.join(path, "**/*.py"), recursive=True))  # noqa: PTH118, PTH207
+        else:
+            file_paths.append(path)
+    return map(Path, file_paths)
 
 
 def _sort_files(file_paths: Sequence[Path], check: bool, jobs: int) -> Results:
