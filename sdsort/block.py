@@ -20,9 +20,10 @@ from ast import (
     stmt,
     walk,
 )
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Self
 
-from .visibility import MethodInfos
+from . import rules
 
 if sys.version_info >= (3, 12):
     # PEP 695 `type X = ...` aliases (ast.TypeAlias) only exist on Python 3.12+.
@@ -320,3 +321,20 @@ class FunctionBlock(Block):
     @property
     def names(self):
         return [n.name for n in self._nodes]
+
+
+@dataclass(slots=True)
+class MethodInfos:
+    visibility: rules.Visibility
+    behavior: rules.Behavior
+    contract: rules.Contract
+
+    @classmethod
+    def from_node(cls, node: Function) -> Self:
+        """Create a `MethodInfos` instance from an AST node representing a function definition."""
+        # NOTE: we could do everything in one pass, but since there will never be more than 3-4 decorators, it's not worth the complexity.
+        decorators_names = tuple(decorator.id for decorator in node.decorator_list if isinstance(decorator, Name))
+        visibility = rules.Visibility.new(node.name)
+        behavior = rules.Behavior.new(decorators_names)
+        contract = rules.Contract.new(decorators_names)
+        return cls(visibility, behavior, contract)

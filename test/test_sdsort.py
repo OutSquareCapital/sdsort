@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING
 import pytest
 from click.testing import CliRunner
 
-from sdsort import cli, context, main, sort, step_down_sort
+from sdsort import cli, context, main, rules, sort, step_down_sort
 from sdsort.cli import _MAX_WORKERS, _MIN_FILES_FOR_PARALLELISM, _worker_count
-from sdsort.context import Context, VisibilityRanks, _targets_python314_or_newer
+from sdsort.context import Context, _targets_python314_or_newer
 from sdsort.utils.file import read_file
 
 if TYPE_CHECKING:
@@ -110,61 +110,61 @@ def test_all_cases(test_case: str):
         (
             "partitioned_methods",
             "partitioned_methods",
-            VisibilityRanks.from_kwargs(dunder=1, private=3, protected=3, public=2),
+            rules.Config.from_kwargs(dunder=1, private=3, protected=3, public=2),
             True,
         ),
         (
             "partitioned_methods",
             "partitioned_methods_without_name",
-            VisibilityRanks.from_kwargs(dunder=1, private=3, protected=3, public=2),
+            rules.Config.from_kwargs(dunder=1, private=3, protected=3, public=2),
             False,
         ),
         (
             "visibility_and_name_dependency_chain",
             "visibility_and_name_dependency_chain",
-            VisibilityRanks.from_kwargs(dunder=4, private=1, protected=3, public=2),
+            rules.Config.from_kwargs(dunder=4, private=1, protected=3, public=2),
             True,
         ),
         (
             "visibility_and_name_cross_partition_dependencies",
             "visibility_and_name_cross_partition_dependencies",
-            VisibilityRanks.from_kwargs(dunder=4, private=3, protected=2, public=1),
+            rules.Config.from_kwargs(dunder=4, private=3, protected=2, public=1),
             True,
         ),
         (
             "async_methods_with_visibility_and_name",
             "async_methods_with_visibility_and_name",
-            VisibilityRanks.from_kwargs(dunder=1, private=2, protected=3, public=4),
+            rules.Config.from_kwargs(dunder=1, private=2, protected=3, public=4),
             True,
         ),
         (
             "overloads_with_visibility_and_name",
             "overloads_with_visibility_and_name",
-            VisibilityRanks.from_kwargs(dunder=1, private=2, protected=3, public=4),
+            rules.Config.from_kwargs(dunder=1, private=2, protected=3, public=4),
             True,
         ),
         (
             "visibility_and_name_recursive_methods",
             "visibility_and_name_recursive_methods",
-            VisibilityRanks.from_kwargs(dunder=1, private=2, protected=3, public=4),
+            rules.Config.from_kwargs(dunder=1, private=2, protected=3, public=4),
             True,
         ),
         (
             "partial_visibility_ranks",
             "partial_visibility_ranks",
-            VisibilityRanks.from_kwargs(dunder=1, private=2, protected=None, public=None),
+            rules.Config.from_kwargs(dunder=1, private=2, protected=None, public=None),
             False,
         ),
         (
             "partial_visibility_ranks",
             "partial_visibility_ranks",
-            VisibilityRanks.from_kwargs(dunder=1, private=None, protected=None, public=None),
+            rules.Config.from_kwargs(dunder=1, private=None, protected=None, public=None),
             False,
         ),
         (
             "partial_visibility_ranks",
             "partial_visibility_ranks_by_name",
-            VisibilityRanks.from_kwargs(dunder=1, private=2, protected=None, public=None),
+            rules.Config.from_kwargs(dunder=1, private=2, protected=None, public=None),
             True,
         ),
     ],
@@ -173,7 +173,7 @@ def test_visibility_and_name_cases(
     monkeypatch: pytest.MonkeyPatch,
     case_name: str,
     expected_case_name: str,
-    ranks: VisibilityRanks[int | None],
+    ranks: rules.Config[rules.Visibility, int | None],
     sort_by_name: bool,
 ):
     def configured_context(_root: ast.Module, _path: Path | None = None) -> Context:

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import tomllib
 from ast import ImportFrom, Module
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from functools import lru_cache
 from itertools import takewhile
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from .visibility import VisibilityRanks
+from . import rules
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -34,11 +34,13 @@ class FileKind(StrEnum):
 class Context:
     deferred_annotations: bool
     """Whether lazy annotations are enabled or not."""
-    visibility_ranks: VisibilityRanks[int | None] | None = None
+    visibility_ranks: rules.Config[rules.Visibility, int | None] | None = None
     """Configuration options for sorting logic based on visibility of method names on a given class."""
     sort_by_name: bool = False
     """If `True`, sort methods by name after sorting by visibility.\\
     Default is `False`."""
+    rules_order: list[rules.Names] = field(default_factory=list)
+    """The order of the rules to apply when sorting methods."""
 
     @property
     def sort_by_visibility(self) -> bool:
@@ -47,7 +49,12 @@ class Context:
 
 def gather_context(root_node: Module, file_path: Path | None = None) -> Context:
     config, deferred_annotations = _get_config_and_annotations(file_path, root_node)
-    return Context(deferred_annotations, VisibilityRanks.try_from(config), config.get("sort-by-name", False))
+    return Context(
+        deferred_annotations,
+        rules.Config.try_from(config),
+        config.get("sort-by-name", False),
+        config.get("rules-order", []),
+    )
 
 
 def _get_config_and_annotations(file_path: Path | None, root_node: Module) -> tuple[TomlTable, bool]:
