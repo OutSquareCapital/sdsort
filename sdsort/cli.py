@@ -7,7 +7,7 @@ from functools import partial
 from glob import iglob
 from pathlib import Path
 from tokenize import TokenError
-from typing import TYPE_CHECKING, Literal, TypeAlias
+from typing import TYPE_CHECKING, Final, Literal, TypeAlias
 
 import click
 
@@ -16,11 +16,13 @@ from .utils.pluralize import pluralize
 from .utils.timer import Timer
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Sequence
 
 
 _MIN_FILES_FOR_PARALLELISM = 50
 _MAX_WORKERS = 64
+
+_SUPPORTED_EXTS: Final[tuple[str, ...]] = (".py", ".pyi")
 
 _UNPARSEABLE = (SyntaxError, TokenError, UnicodeDecodeError, OSError)
 
@@ -53,7 +55,8 @@ def main(paths: tuple[str, ...], check: bool, jobs: int) -> None:
     file_paths = _expand_file_paths(paths)
 
     with Timer() as t:
-        results = _sort_files(sorted(file_paths), check, jobs)
+        file_paths.sort()
+        results = _sort_files(file_paths, check, jobs)
 
     _print_results(results, check, t.elapsed)
 
@@ -61,16 +64,18 @@ def main(paths: tuple[str, ...], check: bool, jobs: int) -> None:
         raise SystemExit(1)
 
 
-def _expand_file_paths(paths: tuple[str, ...]) -> Iterator[Path]:
+def _expand_file_paths(paths: tuple[str, ...]) -> list[Path]:
     # We use os here unfortunately because the behavior of Path.glob diverge from the one from iglob. (`glob` just do `list(iglob(...))` internally.)
     # It won't filter folders like `.venv`, and reimplementing this in pure python doubles the time spend on this function.
-    file_paths: list[str] = []
+    file_paths: list[Path] = []
     for path in paths:
         if os.path.isdir(path):  # noqa: PTH112
-            file_paths.extend(iglob(os.path.join(path, "**/*.py"), recursive=True))  # noqa: PTH118, PTH207
+            all_paths = iglob(os.path.join(path, "**/*.py*"), recursive=True)  # noqa: PTH118, PTH207
+            filtered = (file_path for file_path in all_paths if file_path.endswith(_SUPPORTED_EXTS))
+            file_paths.extend(map(Path, filtered))
         else:
-            file_paths.append(path)
-    return map(Path, file_paths)
+            file_paths.append(Path(path))
+    return file_paths
 
 
 def _sort_files(file_paths: Sequence[Path], check: bool, jobs: int) -> Results:
