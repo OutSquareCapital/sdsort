@@ -1,9 +1,7 @@
 import ast
-import os
 import shutil
 import sys
 import tomllib
-from os import mkdir
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -254,7 +252,7 @@ def test_when_single_file_is_targeted_then_other_files_are_not_modified(
 
     # Assert
     assert read_file(unsorted_file) == sorted_output, "Target file should be sorted"
-    assert read_file(other_path) == read_file(other_file), "Other file should be unchanged"
+    assert read_file(Path(other_path)) == read_file(other_file), "Other file should be unchanged"
 
 
 def test_when_directory_is_provided_then_all_python_files_in_it_are_sorted(tmp_path: Path, runner: CliRunner):
@@ -266,7 +264,7 @@ def test_when_directory_is_provided_then_all_python_files_in_it_are_sorted(tmp_p
         shutil.copy(TEST_CASES_DIR / f"{tc}.in.py", tmp_path)
 
     subdir_path = tmp_path / "subdir"
-    mkdir(subdir_path)
+    subdir_path.mkdir()
     subdir_file_path = shutil.copy(TEST_CASES_DIR / "single_class.in.py", subdir_path)
 
     # Act
@@ -274,7 +272,7 @@ def test_when_directory_is_provided_then_all_python_files_in_it_are_sorted(tmp_p
 
     # Files back
     files_after = {tc: read_file(tmp_path / f"{tc}.in.py") for tc in test_cases}
-    files_after["single_class"] = read_file(subdir_file_path)
+    files_after["single_class"] = read_file(Path(subdir_file_path))
 
     # Assert
     for tc, file_after in files_after.items():
@@ -345,7 +343,7 @@ def test_parallel_run_matches_serial_run(tmp_path: Path, runner: CliRunner):
     serial_dir = tmp_path / "serial"
     parallel_dir = tmp_path / "parallel"
     for directory in (serial_dir, parallel_dir):
-        mkdir(directory)
+        directory.mkdir()
         for tc in test_cases:
             shutil.copy(TEST_CASES_DIR / f"{tc}.in.py", directory)
 
@@ -457,6 +455,6 @@ def test_write_failure_after_a_successful_sort_still_crashes(
     # Only *read*/*parse* failures are tolerated. If sorting succeeds but
     # writing the result back fails, that must still crash the run rather than being swallowed.
     # Make the the file read-only to trigger a write failure
-    os.chmod(unsorted_file, 0o444)
+    unsorted_file.chmod(0o444)
     with pytest.raises(OSError):
         runner.invoke(main, ["-j", "1", str(tmp_path)], catch_exceptions=False)

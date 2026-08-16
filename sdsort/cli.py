@@ -4,23 +4,25 @@ import os
 import sys
 from dataclasses import dataclass, field
 from functools import partial
-from glob import glob
+from glob import iglob
+from pathlib import Path
 from tokenize import TokenError
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
 import click
 
+from .context import FileKind
 from .sort import step_down_sort
 from .utils.pluralize import pluralize
 from .utils.timer import Timer
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Sequence
 
-# TODO: switch to pathlib
 
 _MIN_FILES_FOR_PARALLELISM = 50
 _MAX_WORKERS = 64
+
 
 _UNPARSEABLE = (SyntaxError, TokenError, UnicodeDecodeError, OSError)
 
@@ -49,11 +51,12 @@ FileOutcome: TypeAlias = (
         "that scale."
     ),
 )
-def main(paths: tuple[str, ...], check: bool, jobs: int):
+def main(paths: tuple[str, ...], check: bool, jobs: int) -> None:
     file_paths = _expand_file_paths(paths)
 
     with Timer() as t:
-        results = _sort_files(sorted(file_paths), check, jobs)
+        file_paths.sort()
+        results = _sort_files(file_paths, check, jobs)
 
     _print_results(results, check, t.elapsed)
 
@@ -61,17 +64,22 @@ def main(paths: tuple[str, ...], check: bool, jobs: int):
         raise SystemExit(1)
 
 
-def _expand_file_paths(paths: tuple[str, ...]) -> Iterable[str]:
-    file_paths: list[str] = []
+def _expand_file_paths(paths: tuple[str, ...]) -> list[Path]:
+    # We use os here unfortunately because the behavior of Path.glob diverge from the one from iglob. (`glob` just do `list(iglob(...))` internally.)
+    # It won't filter folders like `.venv`, and reimplementing this in pure python doubles the time spend on this function.
+    # Once in python 3.12 we have more option in pathlib to potentially improve this
+    file_paths: list[Path] = []
     for path in paths:
-        if os.path.isdir(path):
-            file_paths.extend(glob(os.path.join(path, "**/*.py"), recursive=True))
+        if os.path.isdir(path):  # noqa: PTH112
+            all_paths = iglob(os.path.join(path, FileKind.PY.as_rglob()), recursive=True)  # noqa: PTH118, PTH207
+            filtered = (file_path for file_path in all_paths if file_path.endswith((FileKind.PY, FileKind.STUB)))
+            file_paths.extend(map(Path, filtered))
         else:
-            file_paths.append(path)
+            file_paths.append(Path(path))
     return file_paths
 
 
-def _sort_files(file_paths: list[str], check: bool, jobs: int):
+def _sort_files(file_paths: Sequence[Path], check: bool, jobs: int) -> Results:
     results = Results()
 
     for file_path, outcome in zip(file_paths, _sort_each(file_paths, check, jobs)):
@@ -88,7 +96,7 @@ def _sort_files(file_paths: list[str], check: bool, jobs: int):
     return results
 
 
-def _sort_each(file_paths: list[str], check: bool, jobs: int) -> list[FileOutcome]:
+def _sort_each(file_paths: Sequence[Path], check: bool, jobs: int) -> list[FileOutcome]:
     """Sort every file, returning one outcome per input path, in input order."""
     sort_one = partial(_sort_file, check=check)
     workers = _worker_count(len(file_paths), jobs, _available_cpu_count())
@@ -123,7 +131,7 @@ def _available_cpu_count() -> int:
     return os.cpu_count() or 1
 
 
-def _sort_file(file_path: str, check: bool) -> FileOutcome:
+def _sort_file(file_path: Path, check: bool) -> FileOutcome:
     try:
         modification = step_down_sort(file_path)
     except _UNPARSEABLE as error:
@@ -132,7 +140,7 @@ def _sort_file(file_path: str, check: bool) -> FileOutcome:
     match modification:
         case ("sorted", modified_source):
             if not check:
-                with open(file_path, "w", encoding="utf-8") as file:
+                with file_path.open("w", encoding="utf-8") as file:
                     file.write(modified_source)
             return ("sorted", None)
         case ("skipped", _):
@@ -152,10 +160,10 @@ def _describe_failure(error: Exception) -> str:
 
 @dataclass
 class Results:
-    modified_files: list[str] = field(default_factory=list)
-    skipped_files: list[str] = field(default_factory=list)
-    pristine_files: list[str] = field(default_factory=list)
-    unparseable_files: list[tuple[str, str]] = field(default_factory=list)
+    modified_files: list[Path] = field(default_factory=list)
+    skipped_files: list[Path] = field(default_factory=list)
+    pristine_files: list[Path] = field(default_factory=list)
+    unparseable_files: list[tuple[Path, str]] = field(default_factory=list)
 
     def __len__(self):
         return (

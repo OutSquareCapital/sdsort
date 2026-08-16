@@ -5,7 +5,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from io import BytesIO
 from itertools import takewhile
-from pathlib import Path
 from tokenize import COMMENT, tokenize
 from typing import TYPE_CHECKING, Generic, Literal, TypeAlias, TypeVar
 
@@ -22,6 +21,7 @@ from .utils.file import read_file, split_lines
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Sequence
+    from pathlib import Path
 
 ResultType: TypeAlias = (
     tuple[Literal["sorted"], str] | tuple[Literal["skipped"], None] | tuple[Literal["unchanged"], None]
@@ -31,13 +31,13 @@ ResultType: TypeAlias = (
 B = TypeVar("B", bound=Block)
 
 
-def step_down_sort(python_file_path: str | Path) -> ResultType:
+def step_down_sort(python_file_path: Path) -> ResultType:
     source = read_file(python_file_path)
     if _should_skip(source):
         return ("skipped", None)
 
     syntax_tree = parse(source, filename=python_file_path)
-    context = gather_context(syntax_tree, Path(python_file_path).resolve())
+    context = gather_context(syntax_tree, python_file_path.resolve())
     source_lines = split_lines(source)
 
     # First, sort top-level blocks (functions and classes)
