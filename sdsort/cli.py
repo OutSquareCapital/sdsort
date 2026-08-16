@@ -67,6 +67,7 @@ def main(paths: tuple[str, ...], check: bool, jobs: int) -> None:
 def _expand_file_paths(paths: tuple[str, ...]) -> list[Path]:
     # We use os here unfortunately because the behavior of Path.glob diverge from the one from iglob. (`glob` just do `list(iglob(...))` internally.)
     # It won't filter folders like `.venv`, and reimplementing this in pure python doubles the time spend on this function.
+    # Once in python 3.12 we have more option in pathlib to potentially improve this
     file_paths: list[Path] = []
     for path in paths:
         if os.path.isdir(path):  # noqa: PTH112
