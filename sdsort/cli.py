@@ -7,10 +7,11 @@ from functools import partial
 from glob import iglob
 from pathlib import Path
 from tokenize import TokenError
-from typing import TYPE_CHECKING, Final, Literal, TypeAlias
+from typing import TYPE_CHECKING, Literal, TypeAlias
 
 import click
 
+from .context import FileKind
 from .sort import step_down_sort
 from .utils.pluralize import pluralize
 from .utils.timer import Timer
@@ -22,7 +23,6 @@ if TYPE_CHECKING:
 _MIN_FILES_FOR_PARALLELISM = 50
 _MAX_WORKERS = 64
 
-_SUPPORTED_EXTS: Final[tuple[str, ...]] = (".py", ".pyi")
 
 _UNPARSEABLE = (SyntaxError, TokenError, UnicodeDecodeError, OSError)
 
@@ -71,8 +71,8 @@ def _expand_file_paths(paths: tuple[str, ...]) -> list[Path]:
     file_paths: list[Path] = []
     for path in paths:
         if os.path.isdir(path):  # noqa: PTH112
-            all_paths = iglob(os.path.join(path, "**/*.py*"), recursive=True)  # noqa: PTH118, PTH207
-            filtered = (file_path for file_path in all_paths if file_path.endswith(_SUPPORTED_EXTS))
+            all_paths = iglob(os.path.join(path, FileKind.PY.as_rglob()), recursive=True)  # noqa: PTH118, PTH207
+            filtered = (file_path for file_path in all_paths if file_path.endswith((FileKind.PY, FileKind.STUB)))
             file_paths.extend(map(Path, filtered))
         else:
             file_paths.append(Path(path))
