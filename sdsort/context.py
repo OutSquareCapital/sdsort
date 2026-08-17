@@ -29,6 +29,9 @@ class FileKind(StrEnum):
     def as_rglob(self) -> str:
         return f"**/*{self.value}*"
 
+    def as_glob(self) -> str:
+        return f"**/*{self.value}"
+
 
 @dataclass
 class Context:

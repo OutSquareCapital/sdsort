@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from functools import partial
 from glob import iglob
@@ -17,7 +18,7 @@ from .utils.pluralize import pluralize
 from .utils.timer import Timer
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Iterator, Sequence
 
 
 _MIN_FILES_FOR_PARALLELISM = 50
@@ -39,6 +40,7 @@ FileOutcome: TypeAlias = (
     is_eager=True,
 )
 @click.option("--check", is_flag=True, help="Don't write changes, just report if files would be re-arranged.")
+@click.option("--stubs", is_flag=True, help="Include stub files (.pyi).")
 @click.option(
     "--jobs",
     "-j",
@@ -51,8 +53,8 @@ FileOutcome: TypeAlias = (
         "that scale."
     ),
 )
-def main(paths: tuple[str, ...], check: bool, jobs: int) -> None:
-    file_paths = _expand_file_paths(paths)
+def main(paths: tuple[str, ...], check: bool, stubs: bool, jobs: int) -> None:
+    file_paths = _expand_file_paths(paths, stubs)
 
     with Timer() as t:
         file_paths.sort()
@@ -64,19 +66,31 @@ def main(paths: tuple[str, ...], check: bool, jobs: int) -> None:
         raise SystemExit(1)
 
 
-def _expand_file_paths(paths: tuple[str, ...]) -> list[Path]:
-    # We use os here unfortunately because the behavior of Path.glob diverge from the one from iglob. (`glob` just do `list(iglob(...))` internally.)
-    # It won't filter folders like `.venv`, and reimplementing this in pure python doubles the time spend on this function.
-    # Once in python 3.12 we have more option in pathlib to potentially improve this
+def _expand_file_paths(paths: tuple[str, ...], stubs: bool) -> list[Path]:
     file_paths: list[Path] = []
+    strategy: Callable[[str], Iterator[Path]] = _get_py_and_stub_files if stubs else _get_py_files
     for path in paths:
         if os.path.isdir(path):  # noqa: PTH112
-            all_paths = iglob(os.path.join(path, FileKind.PY.as_rglob()), recursive=True)  # noqa: PTH118, PTH207
-            filtered = (file_path for file_path in all_paths if file_path.endswith((FileKind.PY, FileKind.STUB)))
-            file_paths.extend(map(Path, filtered))
+            file_paths.extend(strategy(path))
         else:
             file_paths.append(Path(path))
     return file_paths
+
+
+def _get_py_and_stub_files(path: str) -> Iterator[Path]:
+    ok_suffixes = (FileKind.PY, FileKind.STUB)
+    return (Path(p) for p in _search_pattern(path, FileKind.PY.as_rglob()) if p.endswith(ok_suffixes))
+
+
+def _get_py_files(path: str) -> Iterator[Path]:
+    return map(Path, _search_pattern(path, FileKind.PY.as_glob()))
+
+
+def _search_pattern(path: str, pattern: str) -> Iterator[str]:
+    # We use os here unfortunately because the behavior of Path.glob diverge from the one from iglob. (`glob` just do `list(iglob(...))` internally.)
+    # It won't filter folders like `.venv`, and reimplementing this in pure python doubles the time spend on this function.
+    # Once in python 3.12 we have more option in pathlib to potentially improve this
+    return iglob(os.path.join(path, pattern), recursive=True)  # noqa: PTH118, PTH207
 
 
 def _sort_files(file_paths: Sequence[Path], check: bool, jobs: int) -> Results:
