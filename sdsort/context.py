@@ -8,7 +8,7 @@ from functools import lru_cache
 from itertools import takewhile
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from . import rules
+from sdsort import config
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -34,27 +34,15 @@ class FileKind(StrEnum):
 class Context:
     deferred_annotations: bool
     """Whether lazy annotations are enabled or not."""
-    visibility_ranks: rules.Config[rules.Visibility] | None = None
-    """Configuration options for sorting logic based on visibility of method names on a given class."""
+    config: config.Config = field(default_factory=config.Config)
     sort_by_name: bool = False
-    """If `True`, sort methods by name after sorting by visibility.\\
+    """If `True`, sort methods by name after dependency sorting.\
     Default is `False`."""
-    rules_order: list[rules.Names] = field(default_factory=list)
-    """The order of the rules to apply when sorting methods."""
-
-    @property
-    def sort_by_visibility(self) -> bool:
-        return self.visibility_ranks is not None
 
 
 def gather_context(root_node: Module, file_path: Path | None = None) -> Context:
-    config, deferred_annotations = _get_config_and_annotations(file_path, root_node)
-    return Context(
-        deferred_annotations,
-        rules.Visibility.try_into(config),
-        config.get("sort-by-name", False),
-        config.get("rules-order", []),
-    )
+    table, deferred_annotations = _get_config_and_annotations(file_path, root_node)
+    return Context(deferred_annotations, config.from_table(table), table.get("sort-by-name", False))
 
 
 def _get_config_and_annotations(file_path: Path | None, root_node: Module) -> tuple[TomlTable, bool]:

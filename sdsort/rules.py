@@ -1,75 +1,41 @@
 from __future__ import annotations
 
-from collections.abc import Container, Iterable, MutableMapping
-from enum import Enum, StrEnum, auto
-from typing import TYPE_CHECKING, Literal, Self, TypeAlias, TypeVar
+from abc import abstractmethod
+from ast import Name
+from enum import StrEnum, auto
+from typing import TYPE_CHECKING, Self
 
 if TYPE_CHECKING:
-    from sdsort.context import TomlTable
+    from collections.abc import Iterator
 
-K = TypeVar("K", bound=Enum)
-
-
-Names = Literal["visibility", "behavior", "contract", "alphabetical"]
-"""Type alias for the names of the rules that can be applied when sorting methods."""
+    from sdsort.utils.ast import Function
 
 
-Config: TypeAlias = MutableMapping[K, int]
-"""A configuration mapping from enum keys to integer ranks."""
-
-
-class _Rule(StrEnum):
-    @classmethod
-    def as_config(cls, **kwargs: int | None) -> Config[Self]:
-        """Convenience helper for testing purposes."""
-
-        iterator = ((k, kwargs.get(k.name.lower())) for k in cls)
-        return _into_config(iterator)
+class Rule(StrEnum):
+    """Base class for all rules that can be applied when sorting methods.\\
+    Each rule is represented by an enum value, and the order of the values defines the default sorting order when no configuration is provided."""
 
     @classmethod
-    def try_into(cls, config: TomlTable) -> Config[Self] | None:
-        """Try to create a `Config` instance corresponding to this rule from an opaque dictionary.
-
-        Args:
-            config (TomlTable): A configuration dictionary, parsed from a TOML file, which may contain the needed keys for instantiation.
-
-        Returns:
-            Config[Self, int | None] | None: A `Config` instance if the configuration is valid, otherwise `None`.
-        """
-        values = tuple(config.get(k) for k in cls)
-        if all(value is None for value in values):
-            return None
-        else:
-            return _into_config(zip(cls, values))
+    @abstractmethod
+    def from_node(cls, node: Function) -> Self:
+        """Determine the enum variant corresponding to the given `Function` AST node."""
 
 
-def _into_config(iterable: Iterable[tuple[K, int | None]]) -> Config[K]:
-    """Transform an  `Iterable[tuple[K, V]]`, where `K: Enum`, into a `Config[K]` dictionary by replacing `None` values by a default value.\\
-    Said default value is the maximum of the non-`None` ranks plus one, so that any `None` value is considered to be **after** all the other ranks."""
-    config = dict(iterable)
-    default = max(rank for rank in config.values() if rank is not None) + 1
-    # In-place mutation for efficiency. We can statically guarantee the type output after this operation.
-    for k, rank in config.items():
-        if rank is None:
-            config[k] = default
-    return config  # pyright: ignore[reportArgumentType, reportReturnType]
-
-
-class Behavior(_Rule):
+class Behavior(Rule):
     """Mutually exclusive decorators that define the behavior of a method."""
 
-    STATICMETHOD = auto()
-    """@staticmethod."""
     CLASSMETHOD = auto()
     """@classmethod."""
+    STATICMETHOD = auto()
+    """@staticmethod."""
     PROPERTY = auto()
     """@property."""
     INSTANCEMETHOD = auto()
     """Any method without a decorator corresponding to the above (e.g. `def method(self): ...`)."""
 
     @classmethod
-    def new(cls, names: Iterable[str]) -> Behavior:
-        for name in names:
+    def from_node(cls, node: Function) -> Behavior:
+        for name in _names_from_function(node):
             match name:
                 case cls.STATICMETHOD:
                     return cls.STATICMETHOD
@@ -82,23 +48,33 @@ class Behavior(_Rule):
         return cls.INSTANCEMETHOD
 
 
-class Contract(_Rule):
+class Contract(Rule):
     """Defines the contract of a method, i.e. whether it's an interface, an implementation of an interface, or unrelated to a class hierarchy.\\
     The contract is determined by the presence (or complete absence) of specific decorators."""
 
     ABSTRACTMETHOD = auto()
     """Correspond to `@abc.abstractmethod` decorator. Note that this decorator has runtime implications, which is not the case for it's counterpart `@override` decorator."""
-    OVERRIDE = auto()
-    """Correspond to `@typing.override` decorator."""
     ABSTRACT_OVERRIDE = auto()
     """When a method has both the `@abc.abstractmethod` and `@typing.override` decorators, it is considered to be an abstract override.\\
     Can be used in intermediate classes to narrow types, or share documentation."""
+    OVERRIDE = auto()
+    """Correspond to `@typing.override` decorator."""
     NONE = auto()
     """None of the above decorators are present on the method."""
 
     @classmethod
-    def new(cls, names: Container[str]) -> Contract:
-        match cls.OVERRIDE in names, cls.ABSTRACTMETHOD in names:
+    def from_node(cls, node: Function) -> Contract:
+        is_override = False
+        is_abstract = False
+        for name in _names_from_function(node):
+            match name:
+                case cls.OVERRIDE:
+                    is_override = True
+                case cls.ABSTRACTMETHOD:
+                    is_abstract = True
+                case _:
+                    continue
+        match is_override, is_abstract:
             case False, False:
                 return cls.NONE
             case False, True:
@@ -109,7 +85,11 @@ class Contract(_Rule):
                 return cls.ABSTRACT_OVERRIDE
 
 
-class Visibility(_Rule):
+def _names_from_function(node: Function) -> Iterator[str]:
+    return (decorator.id for decorator in node.decorator_list if isinstance(decorator, Name))
+
+
+class Visibility(Rule):
     """Defines the visibility of a method based on its name, i.e is it intended to be public, or an implementation detail.\\
     The visibility is determined by the naming convention of the method."""
 
@@ -123,7 +103,8 @@ class Visibility(_Rule):
     """Any method with no naming pattern corresponding to the above (e.g. `public`)."""
 
     @classmethod
-    def new(cls, name: str) -> Visibility:
+    def from_node(cls, node: Function) -> Visibility:
+        name = node.name
         if name.startswith("__"):
             if name.endswith("__"):
                 return cls.DUNDER

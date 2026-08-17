@@ -20,10 +20,7 @@ from ast import (
     stmt,
     walk,
 )
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Self
-
-from . import rules
+from typing import TYPE_CHECKING
 
 if sys.version_info >= (3, 12):
     # PEP 695 `type X = ...` aliases (ast.TypeAlias) only exist on Python 3.12+.
@@ -177,22 +174,11 @@ class ClassBlock(Block):
         method_nodes = get_method_nodes(node)
         self._methods: list[FunctionBlock] = []
         current_block: Block | None = None
-        match context.visibility_ranks:
-            case None:
-                for method_node in method_nodes:
-                    if current_block is None or not current_block.append(method_node):
-                        current_block = FunctionBlock(method_node, source_lines, self._context)
-                        self._methods.append(current_block)
-                resolve_overlapping_ranges(self._methods)
-            case ranks:
-                running_end = 0
-                for method_node in method_nodes:
-                    if current_block is None or not current_block.append(method_node):
-                        current_block = FunctionBlock(method_node, source_lines, context)
-                        current_block.start = max(current_block.start, running_end)
-                        self._methods.append(current_block)
-                        current_block.rank = ranks[current_block.infos.visibility]
-                    running_end = max(running_end, current_block.end)
+        for method_node in method_nodes:
+            if current_block is None or not current_block.append(method_node):
+                current_block = FunctionBlock(method_node, source_lines, self._context)
+                self._methods.append(current_block)
+        resolve_overlapping_ranges(self._methods)
 
     def append(self, node: AST) -> bool:
         return False
@@ -250,15 +236,14 @@ def resolve_overlapping_ranges(blocks: Collection[Block]) -> None:
 
 class FunctionBlock(Block):
     _nodes: list[Function]
-    infos: MethodInfos
+    key: list[int]
 
     def __init__(self, node: Function, source_lines: list[str], context: Context):
         super().__init__(node, context)
         self.start, self.end = determine_line_range(node, source_lines)
         self._source_lines = source_lines
         self.name = node.name
-        self.rank = 0
-        self.infos = MethodInfos.from_node(node)
+        self.key = [ranks[rule.from_node(node)] for rule, ranks in context.config.items()]
 
     def append(self, node: AST) -> bool:
         if isinstance(node, (FunctionDef, AsyncFunctionDef)) and node.name == self._nodes[0].name:
@@ -320,20 +305,3 @@ class FunctionBlock(Block):
     @property
     def names(self):
         return [n.name for n in self._nodes]
-
-
-@dataclass(slots=True)
-class MethodInfos:
-    visibility: rules.Visibility
-    behavior: rules.Behavior
-    contract: rules.Contract
-
-    @classmethod
-    def from_node(cls, node: Function) -> Self:
-        """Create a `MethodInfos` instance from an AST node representing a function definition."""
-        # NOTE: we could do everything in one pass, but since there will never be more than 3-4 decorators, it's not worth the complexity.
-        decorators_names = tuple(decorator.id for decorator in node.decorator_list if isinstance(decorator, Name))
-        visibility = rules.Visibility.new(node.name)
-        behavior = rules.Behavior.new(decorators_names)
-        contract = rules.Contract.new(decorators_names)
-        return cls(visibility, behavior, contract)
