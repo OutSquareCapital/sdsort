@@ -22,6 +22,8 @@ from ast import (
 )
 from typing import TYPE_CHECKING
 
+from sdsort import config
+
 if sys.version_info >= (3, 12):
     # PEP 695 `type X = ...` aliases (ast.TypeAlias) only exist on Python 3.12+.
     from ast import TypeAlias
@@ -236,14 +238,13 @@ def resolve_overlapping_ranges(blocks: Collection[Block]) -> None:
 
 class FunctionBlock(Block):
     _nodes: list[Function]
-    key: list[int]
 
     def __init__(self, node: Function, source_lines: list[str], context: Context):
         super().__init__(node, context)
         self.start, self.end = determine_line_range(node, source_lines)
         self._source_lines = source_lines
         self.name = node.name
-        self.key = [ranks[rule.from_node(node)] for rule, ranks in context.config.items()]
+        self.key: tuple[int, ...] = config.compute_key(context.config, node)
 
     def append(self, node: AST) -> bool:
         if isinstance(node, (FunctionDef, AsyncFunctionDef)) and node.name == self._nodes[0].name:
