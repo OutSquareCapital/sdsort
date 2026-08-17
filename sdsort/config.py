@@ -37,20 +37,20 @@ def _ranks_from_rule(table: TomlTable, rule: type[Rule]) -> Ranks:
 
 
 def _ranks_from_table(table: TomlTable, rule: type[Rule]) -> Ranks:
-    values = tuple(table.get(k) for k in rule)
-    if all(value is None for value in values):
-        return DEFAULTS[rule]
+    default = len(rule)
+    ranks: Ranks = {}
+    any_ok = False
+    for k, v in zip(rule, (table.get(k) for k in rule)):
+        match v:
+            case None:
+                ranks[k] = default
+            case _ if v > default:
+                msg = f"A rank can't be higher than {rule.__name__} number of options. Expected max rank of {default}, got {v}"
+                raise ValueError(msg)
+            case _:
+                any_ok = True
+                ranks[k] = v
+    if any_ok:
+        return ranks
     else:
-        default = len(rule)
-
-        def _clean(v: int | None) -> int:
-            match v:
-                case None:
-                    return default
-                case _ if v > default:
-                    msg = f"A rank can't be higher than {rule.__name__} number of options. Expected max rank of {default}, got {v}"
-                    raise ValueError(msg)
-                case _:
-                    return v
-
-        return Ranks(zip(rule, map(_clean, values)))
+        return DEFAULTS[rule]
