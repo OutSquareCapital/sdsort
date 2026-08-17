@@ -1,0 +1,14 @@
+[tool.sdsort]
+rules-order = ["behavior", "contract"]
+
+[tool.sdsort.behavior]
+classmethod = 1
+staticmethod = 2
+property = 3
+instancemethod = 4
+
+[tool.sdsort.contract]
+override = 1
+abstractmethod = 2
+none = 3
+abstract_override = 4

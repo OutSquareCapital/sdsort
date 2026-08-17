@@ -2,13 +2,14 @@ import ast
 import shutil
 import sys
 import tomllib
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 from click.testing import CliRunner
 
-from sdsort import cli, context, main, rules, sort, step_down_sort
+from sdsort import cli, config, context, main, rules, sort, step_down_sort
 from sdsort.cli import _MAX_WORKERS, _MIN_FILES_FOR_PARALLELISM, _worker_count
 from sdsort.context import Context, _targets_python314_or_newer
 from sdsort.utils.file import read_file
@@ -107,77 +108,39 @@ def test_all_cases(test_case: str):
 @pytest.mark.parametrize(
     "case_name,expected_case_name,ranks,sort_by_name",
     [
-        (
-            "partitioned_methods",
-            "partitioned_methods",
-            rules.Visibility.as_config(dunder=1, private=3, protected=3, public=2),
-            True,
-        ),
-        (
-            "partitioned_methods",
-            "partitioned_methods_without_name",
-            rules.Visibility.as_config(dunder=1, private=3, protected=3, public=2),
-            False,
-        ),
-        (
-            "visibility_and_name_dependency_chain",
-            "visibility_and_name_dependency_chain",
-            rules.Visibility.as_config(dunder=4, private=1, protected=3, public=2),
-            True,
-        ),
+        ("partitioned_methods", "partitioned_methods", (1, 3, 3, 2), True),
+        ("partitioned_methods", "partitioned_methods_without_name", (1, 3, 3, 2), False),
+        ("visibility_and_name_dependency_chain", "visibility_and_name_dependency_chain", (4, 1, 3, 2), True),
         (
             "visibility_and_name_cross_partition_dependencies",
             "visibility_and_name_cross_partition_dependencies",
-            rules.Visibility.as_config(dunder=4, private=3, protected=2, public=1),
+            (4, 3, 2, 1),
             True,
         ),
-        (
-            "async_methods_with_visibility_and_name",
-            "async_methods_with_visibility_and_name",
-            rules.Visibility.as_config(dunder=1, private=2, protected=3, public=4),
-            True,
-        ),
-        (
-            "overloads_with_visibility_and_name",
-            "overloads_with_visibility_and_name",
-            rules.Visibility.as_config(dunder=1, private=2, protected=3, public=4),
-            True,
-        ),
-        (
-            "visibility_and_name_recursive_methods",
-            "visibility_and_name_recursive_methods",
-            rules.Visibility.as_config(dunder=1, private=2, protected=3, public=4),
-            True,
-        ),
-        (
-            "partial_visibility_ranks",
-            "partial_visibility_ranks",
-            rules.Visibility.as_config(dunder=1, private=2, protected=None, public=None),
-            False,
-        ),
-        (
-            "partial_visibility_ranks",
-            "partial_visibility_ranks",
-            rules.Visibility.as_config(dunder=1, private=None, protected=None, public=None),
-            False,
-        ),
-        (
-            "partial_visibility_ranks",
-            "partial_visibility_ranks_by_name",
-            rules.Visibility.as_config(dunder=1, private=2, protected=None, public=None),
-            True,
-        ),
+        ("async_methods_with_visibility_and_name", "async_methods_with_visibility_and_name", (1, 2, 3, 4), True),
+        ("overloads_with_visibility_and_name", "overloads_with_visibility_and_name", (1, 2, 3, 4), True),
+        ("visibility_and_name_recursive_methods", "visibility_and_name_recursive_methods", (1, 2, 3, 4), True),
+        ("partial_visibility_ranks", "partial_visibility_ranks", (1, 2, None, None), False),
+        ("partial_visibility_ranks", "partial_visibility_ranks", (1, None, None, None), False),
+        ("partial_visibility_ranks", "partial_visibility_ranks_by_name", (1, 2, None, None), True),
     ],
 )
 def test_visibility_and_name_cases(
     monkeypatch: pytest.MonkeyPatch,
     case_name: str,
     expected_case_name: str,
-    ranks: rules.Config[rules.Visibility],
+    ranks: Iterable[int | None],
     sort_by_name: bool,
-):
+) -> None:
     def configured_context(_root: ast.Module, _path: Path | None = None) -> Context:
-        return Context(False, ranks, sort_by_name=sort_by_name)
+        return Context(
+            deferred_annotations=False,
+            config=config.from_table({
+                "rules-order": ["visibility"],
+                "visibility": dict(zip(rules.Visibility, ranks)),
+            }),
+            sort_by_name=sort_by_name,
+        )
 
     monkeypatch.setattr(sort, "gather_context", configured_context)
     _, actual_output = step_down_sort(TEST_CASES_DIR / f"{case_name}.in.py")
@@ -194,6 +157,7 @@ def test_visibility_and_name_cases(
         "no_ranks_by_name",
         "no_ranks_by_name_with_dependencies",
         "no_ranks_by_name_complex",
+        "behavior_and_contract_partitions",
     ],
 )
 def test_toml_configuration_cases(case_name: str):
@@ -202,6 +166,20 @@ def test_toml_configuration_cases(case_name: str):
     status, actual_output = step_down_sort(case_dir / "input.py")
     assert status == "sorted"
     assert actual_output == read_file(case_dir / "expected.py")
+
+
+def test_rules_without_a_table_use_declaration_order(tmp_path: Path):
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.sdsort]\nrules-order = ["behavior", "contract"]\n', encoding="utf-8"
+    )
+    source_path = tmp_path / "input.py"
+    source_path.write_text("", encoding="utf-8")
+
+    actual_context = context.gather_context(ast.parse(""), source_path)
+
+    assert tuple(actual_context.config) == (rules.Behavior, rules.Contract)
+    assert actual_context.config[rules.Behavior] == config.DEFAULTS[rules.Behavior]
+    assert actual_context.config[rules.Contract] == config.DEFAULTS[rules.Contract]
 
 
 def test_pyproject_is_parsed_once_per_project(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
