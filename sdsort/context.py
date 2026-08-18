@@ -37,8 +37,8 @@ def gather_context(root_node: Module, file_path: Path | None = None) -> Context:
     return Context(
         deferred_annotations,
         config.from_table(table),
-        table.get("method-by-name", False),
-        table.get("method-by-dependency", True),
+        table.get(config.Options.METHOD_BY_NAME, False),
+        table.get(config.Options.METHOD_BY_DEPENDENCY, True),
     )
 
 

@@ -14,7 +14,7 @@ from click.testing import CliRunner
 from sdsort import cli, config, context, main, sort, step_down_sort
 from sdsort.cli import _MAX_WORKERS, _MIN_FILES_FOR_PARALLELISM, _worker_count
 from sdsort.context import Context, _targets_python314_or_newer
-from sdsort.rules import Visibility
+from sdsort.rules import Clause, Visibility
 from sdsort.utils.file import read_file
 
 if TYPE_CHECKING:
@@ -201,6 +201,20 @@ def test_toml_configuration_cases(case_name: str):
     status, actual_output = step_down_sort(case_dir / "input.py")
     assert status == "sorted"
     assert actual_output == read_file(case_dir / "expected.py")
+
+
+def test_rules_without_a_table_use_declaration_order(tmp_path: Path) -> None:
+    clauses = Clause.__subclasses__()
+    method_order = ", ".join(f'"{clause.__name__.lower()}"' for clause in clauses)
+    txt = f"[tool.sdsort]\n{config.Options.METHOD_ORDER} = [{method_order}]\n"
+    tmp_path.joinpath("pyproject.toml").write_text(txt, encoding="utf-8")
+    source_path = tmp_path / "input.py"
+    source_path.write_text("", encoding="utf-8")
+
+    actual_context = context.gather_context(ast.parse(""), source_path)
+
+    assert tuple(actual_context.config) == tuple(clauses)
+    assert all(actual_context.config[clause] == config.DEFAULTS[clause] for clause in clauses)
 
 
 def test_pyproject_is_parsed_once_per_project(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

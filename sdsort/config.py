@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import TYPE_CHECKING, Final, TypeAlias
 
 from .rules import Clause
@@ -23,9 +24,15 @@ DEFAULTS: Final[Config] = {clause: Ranks(zip(clause, range(len(clause)))) for cl
 """Cached default config."""
 
 
+class Options(StrEnum):
+    METHOD_ORDER = "method-order"
+    METHOD_BY_NAME = "method-by-name"
+    METHOD_BY_DEPENDENCY = "method-by-dependency"
+
+
 def from_table(table: TomlTable) -> Config:
     """Create active clause configurations in the configured partition order."""
-    clauses = (MAPPING[clause] for clause in table.get("method-order", []))
+    clauses = (MAPPING[clause] for clause in table.get(Options.METHOD_ORDER, []))
     return {clause: _ranks_from_clause(table, clause) for clause in clauses}
 
 
