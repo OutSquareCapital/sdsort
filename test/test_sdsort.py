@@ -197,8 +197,8 @@ def test_visibility_and_name_cases(
         "no_ranks_by_name_with_dependencies",
         "no_ranks_by_name_complex",
         "constructors_disabled",
-        "constructors_with_ranks",
-        "constructors_with_ranks_and_name",
+        "constructors_with_visibility",
+        "constructors_with_visibility_and_name",
     ],
 )
 def test_toml_configuration_cases(case_name: str):
