@@ -1,61 +1,49 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import TYPE_CHECKING, Final, TypeAlias
 
-from .rules import Rule
+from .rules import Clause
 
 if TYPE_CHECKING:
     from .context import TomlTable
     from .utils.ast import Function
 
-
-Ranks: TypeAlias = dict[Rule, int]
+Ranks: TypeAlias = dict[Clause, int]
 """A configuration mapping from enum keys to integer ranks."""
 
 
-Config: TypeAlias = dict[type[Rule], Ranks]
-"""A mapping from rule classes to their corresponding sub-configurations."""
+Config: TypeAlias = dict[type[Clause], Ranks]
+"""A mapping from `Clause` classes to their corresponding sub-configurations."""
 
 
-MAPPING: Final[dict[str, type[Rule]]] = {rule.__name__.lower(): rule for rule in Rule.__subclasses__()}
-"""Cached mapping of name -> rule for all `Rule` subclasses."""
-DEFAULTS: Final[Config] = {rule: Ranks(zip(rule, range(len(rule)))) for rule in MAPPING.values()}
+MAPPING: Final[dict[str, type[Clause]]] = {clause.__name__.lower(): clause for clause in Clause.__subclasses__()}
+"""Cached mapping of name -> clause for all `Clause` subclasses."""
+DEFAULTS: Final[Config] = {clause: Ranks(zip(clause, range(len(clause)))) for clause in MAPPING.values()}
 """Cached default config."""
 
 
+class Options(StrEnum):
+    METHOD_ORDER = "method-order"
+    METHOD_BY_NAME = "method-by-name"
+    METHOD_BY_DEPENDENCY = "method-by-dependency"
+
+
 def from_table(table: TomlTable) -> Config:
-    """Create active rule configurations in the configured partition order."""
-    rules = (MAPPING[rule] for rule in table.get("rules-order", []))
-    return Config((rule, _ranks_from_rule(table, rule)) for rule in rules)
+    """Create active clause configurations in the configured partition order."""
+    clauses = (MAPPING[clause] for clause in table.get(Options.METHOD_ORDER, []))
+    return {clause: _ranks_from_clause(table, clause) for clause in clauses}
 
 
 def compute_key(config: Config, node: Function) -> tuple[int, ...]:
-    return tuple(ranks[rule.from_node(node)] for rule, ranks in config.items())
+    return tuple(ranks[clause.from_node(node)] for clause, ranks in config.items())
 
 
-def _ranks_from_rule(table: TomlTable, rule: type[Rule]) -> Ranks:
-    match table.get(rule.__name__.lower()):
-        case None:
-            return DEFAULTS[rule]
-        case sub_table:
-            return _ranks_from_table(sub_table, rule)
-
-
-def _ranks_from_table(table: TomlTable, rule: type[Rule]) -> Ranks:
-    default = len(rule)
-    ranks: Ranks = {}
-    any_ok = False
-    for k, v in zip(rule, (table.get(k) for k in rule)):
-        match v:
-            case None:
-                ranks[k] = default
-            case _ if v > default:
-                msg = f"A rank can't be higher than {rule.__name__} number of options. Expected max rank of {default}, got {v}"
-                raise ValueError(msg)
-            case _:
-                any_ok = True
-                ranks[k] = v
-    if any_ok:
-        return ranks
-    else:
-        return DEFAULTS[rule]
+def _ranks_from_clause(table: TomlTable, clause: type[Clause]) -> Ranks:
+    match table.get(clause.config_name(), []):
+        case []:
+            return DEFAULTS[clause]
+        case order:
+            default = len(clause)
+            order_ranks = dict(zip(order, range(len(order))))
+            return {k: order_ranks.get(k, default) for k in clause}

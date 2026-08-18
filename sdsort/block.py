@@ -22,7 +22,7 @@ from ast import (
 )
 from typing import TYPE_CHECKING
 
-from sdsort import config
+from . import config
 
 if sys.version_info >= (3, 12):
     # PEP 695 `type X = ...` aliases (ast.TypeAlias) only exist on Python 3.12+.

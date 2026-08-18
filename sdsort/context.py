@@ -39,13 +39,17 @@ class Context:
     """Whether lazy annotations are enabled or not."""
     config: config.Config = field(default_factory=config.Config)
     sort_by_name: bool = False
-    """If `True`, sort methods by name after dependency sorting.\
-    Default is `False`."""
+    sort_by_dependency: bool = True
 
 
 def gather_context(root_node: Module, file_path: Path | None = None) -> Context:
     table, deferred_annotations = _get_config_and_annotations(file_path, root_node)
-    return Context(deferred_annotations, config.from_table(table), table.get("sort-by-name", False))
+    return Context(
+        deferred_annotations,
+        config.from_table(table),
+        table.get(config.Options.METHOD_BY_NAME, False),
+        table.get(config.Options.METHOD_BY_DEPENDENCY, True),
+    )
 
 
 def _get_config_and_annotations(file_path: Path | None, root_node: Module) -> tuple[TomlTable, bool]:

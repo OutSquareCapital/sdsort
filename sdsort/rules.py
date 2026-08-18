@@ -11,17 +11,48 @@ if TYPE_CHECKING:
     from sdsort.utils.ast import Function
 
 
-class Rule(StrEnum):
-    """Base class for all rules that can be applied when sorting methods.\\
-    Each rule is represented by an enum value, and the order of the values defines the default sorting order when no configuration is provided."""
+class Clause(StrEnum):
+    """Base class for all clauses that can be applied when sorting methods.\\
+    Each clause is represented by an enum value, and the order of the values defines the default sorting order when no configuration is provided."""
 
     @classmethod
     @abstractmethod
     def from_node(cls, node: Function) -> Self:
         """Determine the enum variant corresponding to the given `Function` AST node."""
 
+    @classmethod
+    def config_name(cls) -> str:
+        return f"{cls.__name__.lower()}-order"
 
-class Behavior(Rule):
+
+class Visibility(Clause):
+    """Defines the visibility of a method based on its name, i.e is it intended to be public, or an implementation detail.\\
+    The visibility is determined by the naming convention of the method."""
+
+    DUNDER = auto()
+    """A method name that starts and ends with double underscores (e.g. `__init__`)."""
+    PUBLIC = auto()
+    """Any method with no naming pattern corresponding to the above (e.g. `public`)."""
+    PROTECTED = auto()
+    """A method name that starts with a single underscore (e.g. `_protected`)."""
+    PRIVATE = auto()
+    """A method name with same prefix as a dunder, but no suffix (e.g. `__private`)."""
+
+    @classmethod
+    def from_node(cls, node: Function) -> Visibility:
+        name = node.name
+        if name.startswith("__"):
+            if name.endswith("__"):
+                return cls.DUNDER
+            else:
+                return cls.PRIVATE
+        elif name.startswith("_"):
+            return cls.PROTECTED
+        else:
+            return cls.PUBLIC
+
+
+class Behavior(Clause):
     """Mutually exclusive decorators that define the behavior of a method."""
 
     CLASSMETHOD = auto()
@@ -48,7 +79,7 @@ class Behavior(Rule):
         return cls.INSTANCEMETHOD
 
 
-class Contract(Rule):
+class Contract(Clause):
     """Defines the contract of a method, i.e. whether it's an interface, an implementation of an interface, or unrelated to a class hierarchy.\\
     The contract is determined by the presence (or complete absence) of specific decorators."""
 
@@ -87,30 +118,3 @@ class Contract(Rule):
 
 def _names_from_function(node: Function) -> Iterator[str]:
     return (decorator.id for decorator in node.decorator_list if isinstance(decorator, Name))
-
-
-class Visibility(Rule):
-    """Defines the visibility of a method based on its name, i.e is it intended to be public, or an implementation detail.\\
-    The visibility is determined by the naming convention of the method."""
-
-    DUNDER = auto()
-    """A method name that starts and ends with double underscores (e.g. `__init__`)."""
-    PRIVATE = auto()
-    """A method name with same prefix as a dunder, but no suffix (e.g. `__private`)."""
-    PROTECTED = auto()
-    """A method name that starts with a single underscore (e.g. `_protected`)."""
-    PUBLIC = auto()
-    """Any method with no naming pattern corresponding to the above (e.g. `public`)."""
-
-    @classmethod
-    def from_node(cls, node: Function) -> Visibility:
-        name = node.name
-        if name.startswith("__"):
-            if name.endswith("__"):
-                return cls.DUNDER
-            else:
-                return cls.PRIVATE
-        elif name.startswith("_"):
-            return cls.PROTECTED
-        else:
-            return cls.PUBLIC
