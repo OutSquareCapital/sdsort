@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from enum import StrEnum, auto
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Final, Literal, Self
 
 if TYPE_CHECKING:
     from sdsort.utils.ast import Function
+
+
+Constructors = Literal["__new__", "__init__", "__post_init__"]
+"""Dunders instances constructors, that are often kept at the top of the class by convention."""
+CONSTRUCTORS_RANKS: Final[dict[str, int]] = {k: i for i, k in enumerate(Constructors.__args__)}
+CONSTRUCTORS_DEFAULT: Final[int] = len(CONSTRUCTORS_RANKS) + 1
 
 
 class Clause(StrEnum):

@@ -25,9 +25,18 @@ DEFAULTS: Final[Config] = {clause: Ranks(zip(clause, range(len(clause)))) for cl
 
 
 class Options(StrEnum):
+    """Enumerations of all supported configuration options in the TOML file."""
+
     METHOD_ORDER = "method-order"
+    """Defines the order of clauses to be applied when sorting methods."""
     METHOD_BY_NAME = "method-by-name"
+    """Whether to sort methods by name or not.\\
+    If any clauses are specified in the `method-order` option, this applies last."""
     METHOD_BY_DEPENDENCY = "method-by-dependency"
+    """Whether to sort methods by dependency or not.\\
+        If any clauses are specified in the `method-order` option, this rule won't cross partitions boundaries, i.e callers are only checked within the same partition."""
+    METHOD_CONSTRUCTORS_FIRST = "method-constructors-first"
+    """Whether to sort method constructors first or not. This can be considered its own partition in a certain way, although it takes priority above any other method-order clauses."""
 
 
 def from_table(table: TomlTable) -> Config:

@@ -93,6 +93,7 @@ def sorted_output() -> str:
         "deferred_class_attribute_annotations",
         "deferred_statement_annotation",
         "skip_file_directive",
+        "constructors_first",
     ],
 )
 def test_all_cases(test_case: str):
@@ -184,6 +185,8 @@ def test_visibility_and_name_cases(
     assert actual_output == read_file(TEST_CASES_DIR / f"{expected_case_name}.out.py")
 
 
+# TODO: convert all these tests to provide the config inline instead of files
+# And add specific tests for the config parsing.
 @pytest.mark.parametrize(
     "case_name",
     [
@@ -193,6 +196,9 @@ def test_visibility_and_name_cases(
         "no_ranks_by_name",
         "no_ranks_by_name_with_dependencies",
         "no_ranks_by_name_complex",
+        "constructors_disabled",
+        "constructors_with_ranks",
+        "constructors_with_ranks_and_name",
     ],
 )
 def test_toml_configuration_cases(case_name: str):

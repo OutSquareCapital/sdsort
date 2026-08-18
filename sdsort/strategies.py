@@ -3,28 +3,30 @@ from __future__ import annotations
 import ast
 import itertools
 from collections import defaultdict
-from collections.abc import Callable, Collection
-from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias, TypeVar
-
-from sdsort.utils.ast import get_method_nodes, is_blank
+from collections.abc import Callable, Collection, Hashable
+from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar
 
 from .block import Block, FunctionBlock, block_for, resolve_overlapping_ranges
 from .context import Context
 from .graph import AcyclicGraph, Edges
+from .rules import CONSTRUCTORS_DEFAULT, CONSTRUCTORS_RANKS
+from .utils.ast import get_method_nodes, is_blank
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from _typeshed import SupportsRichComparison
+
 A = TypeVar("A", bound=ast.AST)
 B = TypeVar("B", bound=Block)
-
-
-SortKeyFn: TypeAlias = Callable[[list[B]], list[B]]
+# Can't use pure typing constructs with old generics syntax. Replace Hashable with SupportsRichComparison once Python 3.11 support is dropped.
+KeyFn: TypeAlias = Callable[[B], Hashable]
+SortFn: TypeAlias = Callable[[list[B]], list[B]]
 VisitFn: TypeAlias = Callable[[Edges[B], list[B], B], None]
 RearrangeFn: TypeAlias = Callable[[list[str], Collection[B], list[B], int], list[str]]
 BlockFindFn: TypeAlias = Callable[[A, list[str], Context], list[B]]
-WalkFn: TypeAlias = Callable[[list[B], VisitFn[B], SortKeyFn[B]], list[B]]
-StepsFns: TypeAlias = tuple[BlockFindFn[A, B], SortKeyFn[B], VisitFn[B], WalkFn[B], RearrangeFn[B]]
+WalkFn: TypeAlias = Callable[[list[B], VisitFn[B], SortFn[B]], list[B]]
+StepsFns: TypeAlias = tuple[BlockFindFn[A, B], SortFn[B], VisitFn[B], WalkFn[B], RearrangeFn[B]]
 Pipeline: TypeAlias = Callable[[A, list[str], Context, int], list[str]]
 
 
@@ -42,41 +44,86 @@ def build_pipeline(steps: StepsFns[A, B], early_return: bool = False) -> Pipelin
 
 
 def steps_for_module() -> StepsFns[ast.Module, Block]:
-    return (_Find.top_level_blocks, _SortBy.none, _Visit.top_block, _Walk.visit_module, _RearrangeLines.all)
+    return (_Find.top_level_blocks, _SortBy.none(False), _Visit.top_block, _Walk.visit_module, _RearrangeLines.all)
 
 
 def steps_for_methods(context: Context) -> StepsFns[ast.ClassDef, FunctionBlock]:
     f = _Find.method_blocks
     match bool(context.config), context.sort_by_name, context.sort_by_dependency:
-        case False, False, False:
-            return (f, _SortBy.none, _Visit.none, _Walk.none, _RearrangeLines.none)
         case False, False, True:
-            return (f, _SortBy.none, _Visit.method(), _Walk.visit_class, _RearrangeLines.all)
+            return (
+                f,
+                _SortBy.none(context.constructors_first),
+                _Visit.method(),
+                _Walk.sort_and_visit,
+                _RearrangeLines.all,
+            )
         case False, True, False:
-            return (f, _SortBy.name, _Visit.none, _Walk.sort, _RearrangeLines.all)
+            return (f, _SortBy.name(context.constructors_first), _Visit.none, _Walk.sort, _RearrangeLines.all)
         case False, True, True:
-            return (f, _SortBy.name, _Visit.method(), _Walk.sort_and_visit, _RearrangeLines.all)
+            return (
+                f,
+                _SortBy.name(context.constructors_first),
+                _Visit.method(),
+                _Walk.sort_and_visit,
+                _RearrangeLines.all,
+            )
         case True, False, False:
-            return (f, _SortBy.key, _Visit.none, _Walk.sort, _RearrangeLines.all)
+            return (f, _SortBy.key(context.constructors_first), _Visit.none, _Walk.sort, _RearrangeLines.all)
         case True, False, True:
-            return (f, _SortBy.key, _Visit.method_by_partition(), _Walk.sort_and_visit, _RearrangeLines.all)
+            return (
+                f,
+                _SortBy.key(context.constructors_first),
+                _Visit.method_by_partition(),
+                _Walk.sort_and_visit,
+                _RearrangeLines.all,
+            )
         case True, True, False:
-            return (f, _SortBy.key_and_name, _Visit.none, _Walk.sort, _RearrangeLines.by_partition)
+            return (
+                f,
+                _SortBy.key_and_name(context.constructors_first),
+                _Visit.none,
+                _Walk.sort,
+                _RearrangeLines.by_partition,
+            )
         case True, True, True:
             return (
                 f,
-                _SortBy.key_and_name,
+                _SortBy.key_and_name(context.constructors_first),
                 _Visit.method_by_partition_and_name(),
                 _Walk.sort_and_visit,
                 _RearrangeLines.by_partition,
             )
+        case False, False, False:
+            raise ValueError("sdsort could not resolve a sorting strategy, as no options were active.")
 
 
 class _SortBy:
-    none: ClassVar[SortKeyFn[Any]] = lambda blocks: blocks
-    name: ClassVar[SortKeyFn[FunctionBlock]] = lambda blocks: sorted(blocks, key=lambda method: method.name)
-    key: ClassVar[SortKeyFn[FunctionBlock]] = lambda blocks: sorted(blocks, key=lambda method: method.key)
-    key_and_name: ClassVar[SortKeyFn[FunctionBlock]] = lambda blocks: sorted(blocks, key=lambda m: (m.key, m.name))
+    @staticmethod
+    def none(constructors_first: bool) -> SortFn[Any]:
+        return _make_sorter(lambda _: (), constructors_first)
+
+    @staticmethod
+    def name(constructors_first: bool) -> SortFn[FunctionBlock]:
+        return _make_sorter(lambda method: method.name, constructors_first)
+
+    @staticmethod
+    def key(constructors_first: bool) -> SortFn[FunctionBlock]:
+        return _make_sorter(lambda method: method.key, constructors_first)
+
+    @staticmethod
+    def key_and_name(constructors_first: bool) -> SortFn[FunctionBlock]:
+        return _make_sorter(lambda method: (method.key, method.name), constructors_first)
+
+
+def _make_sorter(
+    sort_key: Callable[[FunctionBlock], SupportsRichComparison], constructors_first: bool
+) -> SortFn[FunctionBlock]:
+    def inner(method: FunctionBlock) -> SupportsRichComparison:
+        return (CONSTRUCTORS_RANKS.get(method.name, CONSTRUCTORS_DEFAULT), sort_key(method))
+
+    key = inner if constructors_first else sort_key
+    return lambda blocks: sorted(blocks, key=key)
 
 
 class _Visit:
@@ -174,8 +221,6 @@ class _Find:
 
 
 class _RearrangeLines:
-    none: ClassVar[RearrangeFn[Any]] = lambda source_lines, _, _a, _b: source_lines
-
     @staticmethod
     def all(
         source_lines: list[str], original_blocks: Collection[B], sorted_blocks: list[B], start: int = 0
@@ -266,22 +311,20 @@ def _ensure_number_of_leading_blank_lines_remains_unchanged(
 
 
 class _Walk:
-    none: ClassVar[WalkFn[Any]] = lambda _, _a, _b: []
-
     @staticmethod
-    def sort(blocks: list[B], _visit_fn: VisitFn[B], sort_fn: SortKeyFn[B]) -> list[B]:
+    def sort(blocks: list[B], _visit_fn: VisitFn[B], sort_fn: SortFn[B]) -> list[B]:
         return sort_fn(blocks)
 
     @staticmethod
-    def visit_module(blocks: list[B], visit_fn: VisitFn[B], _: SortKeyFn[B]) -> list[B]:
+    def visit_module(blocks: list[B], visit_fn: VisitFn[B], _: SortFn[B]) -> list[B]:
         return _find_dependencies(blocks, visit_fn, _CallTarget.function)
 
     @staticmethod
-    def visit_class(blocks: list[B], visit_fn: VisitFn[B], _: SortKeyFn[B]) -> list[B]:
+    def visit_class(blocks: list[B], visit_fn: VisitFn[B], _: SortFn[B]) -> list[B]:
         return _find_dependencies(blocks, visit_fn, _CallTarget.method)
 
     @staticmethod
-    def sort_and_visit(blocks: list[B], visit_fn: VisitFn[B], sort_fn: SortKeyFn[B]) -> list[B]:
+    def sort_and_visit(blocks: list[B], visit_fn: VisitFn[B], sort_fn: SortFn[B]) -> list[B]:
         return _find_dependencies(sort_fn(blocks), visit_fn, _CallTarget.method)
 
 
