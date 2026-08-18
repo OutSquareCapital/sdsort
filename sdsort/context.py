@@ -40,6 +40,7 @@ class Context:
     config: config.Config = field(default_factory=config.Config)
     sort_by_name: bool = False
     sort_by_dependency: bool = True
+    constructors_first: bool = True
 
 
 def gather_context(root_node: Module, file_path: Path | None = None) -> Context:
@@ -49,6 +50,7 @@ def gather_context(root_node: Module, file_path: Path | None = None) -> Context:
         config.from_table(table),
         table.get(config.Options.METHOD_BY_NAME, False),
         table.get(config.Options.METHOD_BY_DEPENDENCY, True),
+        table.get(config.Options.METHOD_CONSTRUCTORS_FIRST, True),
     )
 
 

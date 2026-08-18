@@ -1,0 +1,4 @@
+[tool.sdsort]
+method-order = ["visibility"]
+method-by-name = true
+visibility-order = ["public", "dunder"]
